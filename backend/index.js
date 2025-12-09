@@ -36,7 +36,10 @@ app.use(session({
 app.get("/auth/me", (req, res) => {
     console.log(req.session)
     if (req.session.userId) {
-        return res.status(200).json({logged: true})
+        return res.status(200).json({logged: true, user: {
+            userId: req.session.userId,
+            email: req.session.email
+        }})
     }
 
     return res.status(401).json({logged: false})
@@ -62,7 +65,7 @@ app.post("/auth/signup", (req, res) => {
     }
 })
 
-app.post("/auth/signup", (req, res) => {
+app.post("/auth/signin", (req, res) => {
     const { email, password } = req.body
     const user = db
         .prepare(`SELECT * FROM users WHERE email = ?`)
