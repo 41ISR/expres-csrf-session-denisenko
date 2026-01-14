@@ -1,4 +1,5 @@
 const db = require("./db")
+const csrf = require("csurf")
 const express = require("express")
 const cors = require("cors")
 const bcrypt = require("bcrypt")
@@ -15,7 +16,7 @@ app.use(cors({
     origin: true, // ТОЛЬКО ДЛЯ CODESPACES
     credentials: true,
     methods: ["GET", "POST", "DELETE", "PUT", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
     exposedHeaders: ["set-cookie"]
 }))
 app.use(session({
@@ -33,13 +34,22 @@ app.use(session({
     }
 }))
 
+const csrfMiddleware = csrf({
+    cookie: {
+        httpOnly: false,
+        sameSite: "none",
+        secure: true
+    }
+})
+
 app.get("/auth/me", (req, res) => {
+    const {clicks} = db.prepare("SELECT clicks FROM users WHERE id = ?").get(req.session.userId)
     console.log(req.session)
     if (req.session.userId) {
         return res.status(200).json({logged: true, user: {
             userId: req.session.userId,
             email: req.session.email,
-            clicks: req.session.clicks || 0
+            clicks: clicks || 0
         }})
     }
 
@@ -63,12 +73,13 @@ app.post("/auth/signup", (req, res) => {
         res.status(201).json(createdUser)
     } catch (error) {
         console.error(error)
-        res.status(400).json(error)
+        res.status(400).json(error.code)
     }
 })
 
 app.post("/auth/signin", (req, res) => {
-    const { email, password } = req.body
+    try {
+        const { email, password } = req.body
     const user = db
         .prepare(`SELECT * FROM users WHERE email = ?`)
         .get(email)
@@ -87,6 +98,10 @@ app.post("/auth/signin", (req, res) => {
     req.session.clicks = user.clicks
 
     res.status(200).json(user)
+    } catch (error) {
+        console.error(error)
+        res.status(400).json(error)
+    }
 })
 
 app.post("/auth/logout", (req, res) => {
@@ -105,6 +120,21 @@ app.post("/click", (req, res) => {
 
     console.log(updateClicks)
     res.status(200).json({message: "Значение кликов обновлено"})
+})
+
+app.get("/leaderboard", (req, res) => {
+    const users = db.prepare("SELECT * FROM users ORDER BY clicks DESC LIMIT 10").all()
+
+    const sanitizedUsers = users.map((el) => {
+        const {createdAt, password, ...newUser} = el
+        return newUser
+    })
+
+    res.status(200).json(sanitizedUsers)
+})
+
+app.get("/csrf-token", csrfMiddleware, (req, res) => {
+    res.json({token: req.csrfToken()})
 })
 
 app.listen("3000", () => {
